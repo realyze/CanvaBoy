@@ -81,13 +81,17 @@ function constructMenu(reviews: MyReview[]) {
 }
 
 async function updateApp() {
-  const { myReviews } = await getReviews();
-  await updateIcon(myReviews);
-  app.dock.setMenu(constructMenu(myReviews));
-  if (pendingReviewsCount != null && pendingReviewsCount < myReviews.length) {
-    app.dock.bounce();
+  try {
+    const { myReviews } = await getReviews();
+    await updateIcon(myReviews);
+    app.dock.setMenu(constructMenu(myReviews));
+    if (pendingReviewsCount != null && pendingReviewsCount < myReviews.length) {
+      app.dock.bounce();
+    }
+    pendingReviewsCount = myReviews.length;
+  } catch (e) {
+    console.error(e);
   }
-  pendingReviewsCount = myReviews.length;
 }
 
 // Initially set the icon to a progress indicator while we're loading data from GH.
