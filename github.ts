@@ -14,7 +14,8 @@ const CONFIG_KEY_GH_API_KEY = 'github.apiKey';
 const store = new Store();
 
 async function getOrgAndRepo(sg: simpleGit.SimpleGit): Promise<string> {
-  return (await sg.raw(['config', '--get', '--global', CONFIG_KEY_ORG_REPO])) || 'Canva/canva';
+  const orgAndRepo = await sg.raw(['config', '--get', '--global', CONFIG_KEY_ORG_REPO]);
+  return (orgAndRepo || 'Canva/canva').trim();
 }
 
 /**
