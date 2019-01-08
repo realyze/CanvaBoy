@@ -1,7 +1,7 @@
 {
   "name": "canvaboy",
   "version": "1.0.0",
-  "description": "A minimal Electron application",
+  "description": "Gentle GitHub PR review notifier",
   "main": "dist/main.js",
   "scripts": {
     "compile": "node_modules/.bin/tsc -p .",
@@ -10,11 +10,8 @@
     "release": "npm run compile && node make-package.js"
   },
   "keywords": [
-    "Electron",
-    "quick",
-    "start",
-    "tutorial",
-    "demo"
+    "electron",
+    "github"
   ],
   "author": "GitHub",
   "license": "CC0-1.0",
