@@ -1,6 +1,6 @@
 {
   "name": "canvaboy",
-  "version": "1.0.0",
+  "version": "0.9.3",
   "description": "Gentle GitHub PR review notifier",
   "main": "dist/main.js",
   "scripts": {
