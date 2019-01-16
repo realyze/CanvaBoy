@@ -1,5 +1,5 @@
 // @ts-check
-import simpleGit from 'simple-git/promise';
+import simpleGit, { SimpleGit } from 'simple-git/promise';
 import github from 'octonode';
 import moment from 'moment';
 import _ from 'lodash';
@@ -7,6 +7,7 @@ import Store from 'electron-store';
 import fs from 'fs';
 import path from 'path';
 import { dialog } from 'electron';
+import fetch from 'isomorphic-fetch';
 
 const CONFIG_KEY_ORG_REPO = 'canvaboy.orgRepo';
 const CONFIG_KEY_GH_API_KEY = 'github.apiKey';
@@ -36,10 +37,12 @@ async function getGithubClient() {
       process.exit(1);
     }
   }
-  const client = github.client(key.trim());
+  key = key.trim();
+  const client = github.client(key);
   return {
     sg,
     client,
+    apiKey: key,
   };
 }
 
@@ -54,8 +57,7 @@ type GithubPR = {
 };
 
 type DecoratedGithubPR = GithubPR & {
-  myLastCommentUpdatedAt?: Date;
-  lastCommentUpdatedAt?: Date;
+  reviewRequestedAt: Date;
 };
 
 type GithubComment = {
@@ -65,6 +67,14 @@ type GithubComment = {
   updated_at: string;
 };
 
+type IssueActivity = {
+  event: string;
+  requested_reviewer: {
+    login: string;
+  };
+  created_at: string;
+};
+
 export type MyReview = {
   // GitHub PR identifier.
   number: number;
@@ -72,8 +82,7 @@ export type MyReview = {
   author: string;
   createdAt: Date;
   updatedAt: Date;
-  myLastCommentUpdatedAt?: Date;
-  lastCommentUpdatedAt?: Date;
+  reviewRequestedAt: Date;
 };
 
 /**
@@ -93,7 +102,7 @@ async function getGithubNick(client: any) {
 }
 
 export async function getReviews() {
-  const { client, sg } = await getGithubClient();
+  const { client, sg, apiKey } = await getGithubClient();
 
   const githubNick = await getGithubNick(client);
   console.log('GitHub nick:', githubNick);
@@ -112,24 +121,15 @@ export async function getReviews() {
   const decoratedPrs = await Promise.all(
     items.map(
       async (pr): Promise<DecoratedGithubPR> => {
-        // Fetch the GitHub PR data.
-        const ghpr = client.pr(orgAndRepo, pr.number);
-        const comments: [GithubComment[]] = await ghpr.commentsAsync();
-
-        // Get my comments only and sort them so we can get the most recent one.
-        const myCommentsUpdatedAt = comments[0]
-          .filter(c => c.user.login.toLowerCase() === githubNick.toLowerCase())
-          .map(c => new Date(c.updated_at));
-        myCommentsUpdatedAt.sort();
-
-        // Ditto but for _all_ comments (useful if there's no comments made by me yet).
-        const allCommentLastUpdatedAts = comments[0].map(c => new Date(c.updated_at));
-        allCommentLastUpdatedAts.sort();
+        const activity = await fetchActivityForPr(pr.number, orgAndRepo, apiKey);
+        const lastReviewRequestForUser = activity.find(
+          act =>
+            act.event === 'review_requested' && act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
+        );
 
         return {
           ...pr,
-          myLastCommentUpdatedAt: _.last(myCommentsUpdatedAt),
-          lastCommentUpdatedAt: _.last(allCommentLastUpdatedAts),
+          reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
         };
       }
     )
@@ -139,8 +139,7 @@ export async function getReviews() {
     title: item.title,
     createdAt: moment(item.created_at).toDate(),
     updatedAt: moment(item.updated_at).toDate(),
-    myLastCommentUpdatedAt: item.myLastCommentUpdatedAt,
-    lastCommentUpdatedAt: item.lastCommentUpdatedAt,
+    reviewRequestedAt: item.reviewRequestedAt,
     number: item.number,
     author: item.user.login,
   }));
@@ -149,6 +148,17 @@ export async function getReviews() {
     myReviews,
   };
 }
+
+async function fetchActivityForPr(prId: number, orgAndRepo: string, accessToken: string): Promise<IssueActivity[]> {
+  console.log(arguments);
+  const res = await fetch(
+    `https://api.github.com/repos/${orgAndRepo}/issues/${prId}/events?access_token=${accessToken}&per_page=100`
+  );
+  const json = await res.json();
+  console.log('json', JSON.stringify(json, null, 2));
+  return json;
+}
+
 /**
  * Returns a URL pointing to GitHub page with all my incoming PRs.
  */

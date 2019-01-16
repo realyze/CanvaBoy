@@ -27,9 +27,9 @@ async function updateIcon(myReviews: MyReview[]) {
   app.dock.setIcon(path.join(scoreImagesDirPath, `score_${badnessLevel}.png`));
 }
 
-function getLastUpdateTime(review: MyReview) {
-  const { myLastCommentUpdatedAt, lastCommentUpdatedAt, updatedAt } = review;
-  return myLastCommentUpdatedAt || lastCommentUpdatedAt || updatedAt;
+function getLastReviewRequestTime(review: MyReview) {
+  const { reviewRequestedAt, updatedAt } = review;
+  return reviewRequestedAt || updatedAt;
 }
 
 /**
@@ -39,9 +39,9 @@ function getLastUpdateTime(review: MyReview) {
  */
 function calculateBadnessScore(reviews: MyReview[]) {
   const scores = reviews.map(review => {
-    const lastUpdatedAt = getLastUpdateTime(review);
-    const workHoursSinceLastUpdate = moment().workingDiff(moment(lastUpdatedAt), 'hours');
-    return Math.floor(workHoursSinceLastUpdate / 4);
+    const lastRequestAt = getLastReviewRequestTime(review);
+    const workHoursSinceLastRequest = moment().workingDiff(moment(lastRequestAt), 'hours');
+    return Math.floor(workHoursSinceLastRequest / 4);
   });
   console.log('scores', scores);
   return _.max(scores) || 0;
@@ -54,13 +54,13 @@ function calculateBadnessScore(reviews: MyReview[]) {
 function constructMenu(reviews: MyReview[]) {
   let menuItems: Electron.MenuItemConstructorOptions[];
   if (reviews.length > 0) {
-    const reviewsByLastUpdateTime = _.sortBy(reviews, r => getLastUpdateTime(r));
+    const reviewsByLastRequestTime = _.sortBy(reviews, r => getLastReviewRequestTime(r));
     menuItems = [
       {
         label: 'Your pending reviews',
-        submenu: reviewsByLastUpdateTime.map(review => ({
-          label: `${_.truncate(review.title, { length: 60 })} [from ${review.author}] [last update: ${moment(
-            getLastUpdateTime(review)
+        submenu: reviewsByLastRequestTime.map(review => ({
+          label: `${_.truncate(review.title, { length: 60 })} [from ${review.author}] [requested ${moment(
+            getLastReviewRequestTime(review)
           ).fromNow()}]`,
           click: async () => {
             const url = await getGithubPRUrl(review.number.toString());
