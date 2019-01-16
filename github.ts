@@ -122,11 +122,13 @@ export async function getReviews() {
     items.map(
       async (pr): Promise<DecoratedGithubPR> => {
         const activity = await fetchActivityForPr(pr.number, orgAndRepo, apiKey);
-        const lastReviewRequestForUser = activity.find(
-          act =>
-            act.event === 'review_requested' && act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
-        );
-
+        const lastReviewRequestForUser = _.sortBy(activity, ['created_at'])
+          .reverse()
+          .find(
+            act =>
+              act.event === 'review_requested' &&
+              act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
+          );
         return {
           ...pr,
           reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
@@ -150,12 +152,10 @@ export async function getReviews() {
 }
 
 async function fetchActivityForPr(prId: number, orgAndRepo: string, accessToken: string): Promise<IssueActivity[]> {
-  console.log(arguments);
   const res = await fetch(
     `https://api.github.com/repos/${orgAndRepo}/issues/${prId}/events?access_token=${accessToken}&per_page=100`
   );
   const json = await res.json();
-  console.log('json', JSON.stringify(json, null, 2));
   return json;
 }
 
