@@ -103,7 +103,7 @@ async function getGithubNick(client: any) {
   return githubNick;
 }
 
-export async function getReviews() {
+export async function getReviews(lastReviews: MyReview[]) {
   const { client, sg, apiKey } = await getGithubClient();
 
   const githubNick = await getGithubNick(client);
@@ -123,6 +123,15 @@ export async function getReviews() {
   const decoratedPrs = await Promise.all(
     items.map(
       async (pr): Promise<DecoratedGithubPR> => {
+        const lastReview = lastReviews.find(r => r.number === pr.number);
+        if (lastReview && lastReview.updatedAt.getTime() === new Date(pr.updated_at).getTime()) {
+          console.log(`returning cached review for PR ${pr.number}`);
+          return {
+            ...pr,
+            reviewRequestedAt: lastReview.reviewRequestedAt,
+            myLastCommentAt: lastReview.myLastCommentAt,
+          };
+        }
         const activity = await fetchActivityForPr(pr.number, orgAndRepo, apiKey);
         const lastReviewRequestForUser = _.sortBy(activity, ['created_at'])
           .reverse()
@@ -150,7 +159,7 @@ export async function getReviews() {
     )
   );
 
-  console.log(decoratedPrs.map(pr => [pr.myLastCommentAt, pr.reviewRequestedAt]));
+  // console.log(decoratedPrs.map(pr => [pr.myLastCommentAt, pr.reviewRequestedAt]));
 
   const myReviews = decoratedPrs.map(item => ({
     title: item.title,

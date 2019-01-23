@@ -44,7 +44,6 @@ function calculateBadnessScore(reviews: MyReview[]) {
   const scores = reviews.map(review => {
     const lastUpdatedAt = getLastReviewUpdateTime(review);
     const workHoursSinceLastUpdate = moment().workingDiff(moment(lastUpdatedAt), 'hours');
-    console.log('work hours', workHoursSinceLastUpdate);
     return Math.floor(workHoursSinceLastUpdate / 4);
   });
   console.log('scores', scores);
@@ -84,15 +83,18 @@ function constructMenu(reviews: MyReview[]) {
   return Menu.buildFromTemplate(menuItems);
 }
 
+let lastReviews: MyReview[] = [];
+
 async function updateApp() {
   try {
-    const { myReviews } = await getReviews();
+    const { myReviews } = await getReviews(lastReviews);
     await updateIcon(myReviews);
     app.dock.setMenu(constructMenu(myReviews));
     if (pendingReviewsCount != null && pendingReviewsCount < myReviews.length) {
       app.dock.bounce();
     }
     pendingReviewsCount = myReviews.length;
+    lastReviews = myReviews;
   } catch (e) {
     console.error(e);
   }
