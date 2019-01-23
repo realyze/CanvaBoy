@@ -58,6 +58,7 @@ type GithubPR = {
 
 type DecoratedGithubPR = GithubPR & {
   reviewRequestedAt: Date;
+  myLastCommentAt?: Date;
 };
 
 type GithubComment = {
@@ -83,6 +84,7 @@ export type MyReview = {
   createdAt: Date;
   updatedAt: Date;
   reviewRequestedAt: Date;
+  myLastCommentAt?: Date;
 };
 
 /**
@@ -129,19 +131,33 @@ export async function getReviews() {
               act.event === 'review_requested' &&
               act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
           );
+
+        // Fetch the GitHub PR data.
+        const ghpr = client.pr(orgAndRepo, pr.number);
+        const comments: [GithubComment[]] = await ghpr.commentsAsync();
+        // Get my comments only and sort them so we can get the most recent one.
+        const myCommentsUpdatedAt = comments[0]
+          .filter(c => c.user.login.toLowerCase() === githubNick.toLowerCase())
+          .map(c => new Date(c.updated_at));
+        myCommentsUpdatedAt.sort();
+
         return {
           ...pr,
           reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
+          myLastCommentAt: myCommentsUpdatedAt.length > 0 ? new Date(myCommentsUpdatedAt[0]) : undefined,
         };
       }
     )
   );
+
+  console.log(decoratedPrs.map(pr => [pr.myLastCommentAt, pr.reviewRequestedAt]));
 
   const myReviews = decoratedPrs.map(item => ({
     title: item.title,
     createdAt: moment(item.created_at).toDate(),
     updatedAt: moment(item.updated_at).toDate(),
     reviewRequestedAt: item.reviewRequestedAt,
+    myLastCommentAt: item.myLastCommentAt,
     number: item.number,
     author: item.user.login,
   }));
