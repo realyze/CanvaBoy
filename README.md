@@ -4,7 +4,7 @@ A boy who lives in the dock and gently reminds you that you have incoming review
 
 You can right click on CanvaBoy to see a list of all your incoming PR reviews.
 
-![CanvaBoy in action](./example.png)
+![CanvaBoy in action](./example.png?raw=1)
 
 Your objective: Keep him happy. :)
 
