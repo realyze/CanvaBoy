@@ -1,10 +1,12 @@
 # CanvaBoy
 
-A boy who lives in the dock and gently reminds you that you have incoming reviews. Oh and he stays happy when you do your reviews on time - and gets a little grumpy if you don't.
+A boy who lives in the dock and gently reminds you that you have incoming reviews. He stays happy when you do your reviews on time (and gets a little grumpy if you don't).
 
 You can right click on CanvaBoy to see a list of all your incoming PR reviews.
 
 ![CanvaBoy in action](./example.png)
+
+Your objective: Keep him happy. :)
 
 ### Installation
 
