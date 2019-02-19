@@ -61,12 +61,12 @@ function constructMenu(reviews: MyReview[]) {
     menuItems = [
       {
         label: 'Your pending reviews',
-        submenu: reviewsByLastRequestTime.map(review => ({
+        submenu: reviewsByLastRequestTime.map((review: MyReview) => ({
           label: `${_.truncate(review.title, { length: 60 })} [from ${review.author}] [last updated ${moment(
             getLastReviewUpdateTime(review)
           ).fromNow()}]`,
-          click: async () => {
-            const url = await getGithubPRUrl(review.number.toString());
+          click: function() {
+            const url = getGithubPRUrl(review.number.toString(), review.orgAndRepo);
             shell.openExternal(url);
           },
         })),

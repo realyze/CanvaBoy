@@ -9,42 +9,8 @@ import path from 'path';
 import { dialog } from 'electron';
 import fetch from 'isomorphic-fetch';
 
-const CONFIG_KEY_ORG_REPO = 'canvaboy.orgRepo';
-const CONFIG_KEY_GH_API_KEY = 'github.apiKey';
-
-const store = new Store();
-
-async function getOrgAndRepo(sg: simpleGit.SimpleGit): Promise<string> {
-  const orgAndRepo = await sg.raw(['config', '--get', '--global', CONFIG_KEY_ORG_REPO]);
-  return (orgAndRepo || 'Canva/canva').trim();
-}
-
-/**
- * Initializes and returns octnode (GitHub API) client and SimpleGit (git) client.
- */
-async function getGithubClient() {
-  const sg = simpleGit();
-  let key = await sg.raw(['config', '--get', '--global', CONFIG_KEY_GH_API_KEY]);
-  if (!key) {
-    try {
-      key = fs.readFileSync(path.join(`${process.env.HOME}`, '.pr-train'), 'utf-8');
-    } catch {
-      const title = 'GitHub API Key not found';
-      const content =
-        `Please run "git config --global ${CONFIG_KEY_GH_API_KEY} <Your GH API key>" ` +
-        `to enable Canva Boy to access your pull requests data.`;
-      dialog.showErrorBox(title, content);
-      process.exit(1);
-    }
-  }
-  key = key.trim();
-  const client = github.client(key);
-  return {
-    sg,
-    client,
-    apiKey: key,
-  };
-}
+const CONFIG_KEY_GH_API_KEY = 'canvaboy.githubToken';
+const CONFIG_KEY_GH_API_KEY_FALLBACK = 'github.apiKey';
 
 type GithubPR = {
   number: number;
@@ -54,11 +20,13 @@ type GithubPR = {
   user: {
     login: string;
   };
+  repository_url: string;
 };
 
 type DecoratedGithubPR = GithubPR & {
   reviewRequestedAt: Date;
   myLastCommentAt?: Date;
+  orgAndRepo: string;
 };
 
 type GithubComment = {
@@ -85,7 +53,41 @@ export type MyReview = {
   updatedAt: Date;
   reviewRequestedAt: Date;
   myLastCommentAt?: Date;
+  orgAndRepo: string;
 };
+
+const store = new Store();
+
+/**
+ * Initializes and returns octnode (GitHub API) client and SimpleGit (git) client.
+ */
+async function getGithubClient() {
+  const sg = simpleGit();
+  let key = await sg.raw(['config', '--get', '--global', CONFIG_KEY_GH_API_KEY]);
+  if (!key) {
+    key = await sg.raw(['config', '--get', '--global', CONFIG_KEY_GH_API_KEY_FALLBACK]);
+  }
+  if (!key) {
+    try {
+      key = fs.readFileSync(path.join(`${process.env.HOME}`, '.pr-train'), 'utf-8');
+    } catch {}
+  }
+  if (!key) {
+    const title = 'GitHub API Key not found';
+    const content =
+      `Please run "git config --global ${CONFIG_KEY_GH_API_KEY} <Your GH API key>" ` +
+      `to enable Canva Boy to access your pull requests data.`;
+    dialog.showErrorBox(title, content);
+    process.exit(1);
+  }
+  key = key.trim();
+  const client = github.client(key);
+  return {
+    sg,
+    client,
+    apiKey: key,
+  };
+}
 
 /**
  * Returns your github nick. To make things a bit snappier, we store this in electron-store
@@ -104,16 +106,15 @@ async function getGithubNick(client: any) {
 }
 
 export async function getReviews(lastReviews: MyReview[]) {
-  const { client, sg, apiKey } = await getGithubClient();
+  const { client, apiKey } = await getGithubClient();
 
   const githubNick = await getGithubNick(client);
   console.log('GitHub nick:', githubNick);
 
-  const orgAndRepo = await getOrgAndRepo(sg);
   const ghsearch = client.search();
 
   const results: [{ items: GithubPR[] }] = await ghsearch.issuesAsync({
-    q: `state:open+repo:${orgAndRepo}+type:pr+review-requested:${githubNick}`,
+    q: `state:open+org:canva+type:pr+review-requested:${githubNick}`,
     sort: 'updated',
     order: 'desc',
   });
@@ -122,16 +123,26 @@ export async function getReviews(lastReviews: MyReview[]) {
 
   const decoratedPrs = await Promise.all(
     items.map(
-      async (pr): Promise<DecoratedGithubPR> => {
+      async (pr): Promise<DecoratedGithubPR | undefined> => {
         const lastReview = lastReviews.find(r => r.number === pr.number);
         if (lastReview && lastReview.updatedAt.getTime() === new Date(pr.updated_at).getTime()) {
-          console.log(`returning cached review for PR ${pr.number}`);
+          console.log(`cache hit for PR: ${pr.number}`);
           return {
             ...pr,
             reviewRequestedAt: lastReview.reviewRequestedAt,
             myLastCommentAt: lastReview.myLastCommentAt,
+            orgAndRepo: lastReview.orgAndRepo,
           };
         }
+        // Parse GH org and repo that this PR belongs to from the URL in the JSON reply.
+        const orgRepoMatch = pr.repository_url.match(/.*\/([^\/]+\/[^\/]+)$/);
+        const orgAndRepo = orgRepoMatch && orgRepoMatch[1];
+        if (!orgAndRepo) {
+          // Something weird has happened, PR doesn't have valid `repository_url` => skip it.
+          console.log(`ERROR, ${pr.number} has invalid repository_url: ${pr.repository_url}`);
+          return undefined;
+        }
+
         const activity = await fetchActivityForPr(pr.number, orgAndRepo, apiKey);
         const lastReviewRequestForUser = _.sortBy(activity, ['created_at'])
           .reverse()
@@ -154,6 +165,7 @@ export async function getReviews(lastReviews: MyReview[]) {
           ...pr,
           reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
           myLastCommentAt: myCommentsUpdatedAt.length > 0 ? new Date(myCommentsUpdatedAt[0]) : undefined,
+          orgAndRepo,
         };
       }
     )
@@ -161,21 +173,31 @@ export async function getReviews(lastReviews: MyReview[]) {
 
   // console.log(decoratedPrs.map(pr => [pr.myLastCommentAt, pr.reviewRequestedAt]));
 
-  const myReviews = decoratedPrs.map(item => ({
-    title: item.title,
-    createdAt: moment(item.created_at).toDate(),
-    updatedAt: moment(item.updated_at).toDate(),
-    reviewRequestedAt: item.reviewRequestedAt,
-    myLastCommentAt: item.myLastCommentAt,
-    number: item.number,
-    author: item.user.login,
-  }));
+  // Map to a format that's easier to work with (also: camelCase FTW).
+  const myReviews = decoratedPrs
+    .filter((pr): pr is DecoratedGithubPR => !!pr)
+    .map(item => ({
+      title: item.title,
+      createdAt: moment(item.created_at).toDate(),
+      updatedAt: moment(item.updated_at).toDate(),
+      reviewRequestedAt: item.reviewRequestedAt,
+      myLastCommentAt: item.myLastCommentAt,
+      number: item.number,
+      author: item.user.login,
+      orgAndRepo: item.orgAndRepo,
+    }));
 
   return {
     myReviews,
   };
 }
 
+/**
+ * Returns JSON result of querying the GitHub activity API
+ * @param prId
+ * @param orgAndRepo
+ * @param accessToken
+ */
 async function fetchActivityForPr(prId: number, orgAndRepo: string, accessToken: string): Promise<IssueActivity[]> {
   const res = await fetch(
     `https://api.github.com/repos/${orgAndRepo}/issues/${prId}/events?access_token=${accessToken}&per_page=100`
@@ -188,17 +210,14 @@ async function fetchActivityForPr(prId: number, orgAndRepo: string, accessToken:
  * Returns a URL pointing to GitHub page with all my incoming PRs.
  */
 export async function getGithubReviewsUrl() {
-  const { client, sg } = await getGithubClient();
+  const { client } = await getGithubClient();
   const githubNick = await getGithubNick(client);
-  const orgAndRepo = await getOrgAndRepo(sg);
-  return `https://github.com/${orgAndRepo}/pulls?q=is%3Apr+is%3Aopen+review-requested%3A${githubNick}+sort%3Aupdated-desc`;
+  return `https://github.com/canva/canva/pulls?q=is%3Apr+is%3Aopen+review-requested%3A${githubNick}+sort%3Aupdated-desc`;
 }
 
 /**
  * Returns a URL pointing to PR identified by `prNumber`.
  */
-export async function getGithubPRUrl(prNumber: string) {
-  const { sg } = await getGithubClient();
-  const orgAndRepo = await getOrgAndRepo(sg);
+export function getGithubPRUrl(prNumber: string, orgAndRepo: string) {
   return `https://github.com/${orgAndRepo}/pull/${prNumber}`;
 }
