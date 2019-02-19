@@ -12,6 +12,8 @@ import fetch from 'isomorphic-fetch';
 const CONFIG_KEY_GH_API_KEY = 'canvaboy.githubToken';
 const CONFIG_KEY_GH_API_KEY_FALLBACK = 'github.apiKey';
 
+const GITHUB_ORG = 'canva';
+
 type GithubPR = {
   number: number;
   title: string;
@@ -114,7 +116,7 @@ export async function getReviews(lastReviews: MyReview[]) {
   const ghsearch = client.search();
 
   const results: [{ items: GithubPR[] }] = await ghsearch.issuesAsync({
-    q: `state:open+org:canva+type:pr+review-requested:${githubNick}`,
+    q: `state:open+org:${GITHUB_ORG}+type:pr+review-requested:${githubNick}`,
     sort: 'updated',
     order: 'desc',
   });
