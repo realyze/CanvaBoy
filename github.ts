@@ -126,49 +126,67 @@ export async function getReviews(lastReviews: MyReview[]) {
   const decoratedPrs = await Promise.all(
     items.map(
       async (pr): Promise<DecoratedGithubPR | undefined> => {
-        const lastReview = lastReviews.find(r => r.number === pr.number);
-        if (lastReview && lastReview.updatedAt.getTime() === new Date(pr.updated_at).getTime()) {
-          console.log(`cache hit for PR: ${pr.number}`);
+        try {
+          const lastReview = lastReviews.find(r => r.number === pr.number);
+          if (lastReview && lastReview.updatedAt.getTime() === new Date(pr.updated_at).getTime()) {
+            console.log(`cache hit for PR: ${pr.number}`);
+            return {
+              ...pr,
+              reviewRequestedAt: lastReview.reviewRequestedAt,
+              myLastCommentAt: lastReview.myLastCommentAt,
+              orgAndRepo: lastReview.orgAndRepo,
+            };
+          }
+          // Parse GH org and repo that this PR belongs to from the URL in the JSON reply.
+          const orgRepoMatch = pr.repository_url.match(/.*\/([^\/]+\/[^\/]+)$/);
+          const orgAndRepo = orgRepoMatch && orgRepoMatch[1];
+          if (!orgAndRepo) {
+            // Something weird has happened, PR doesn't have valid `repository_url` => skip it.
+            console.log(`ERROR, ${pr.number} has invalid repository_url: ${pr.repository_url}`);
+            return undefined;
+          }
+          const ghpr = client.pr(orgAndRepo, pr.number);
+          const ghissue = client.issue(orgAndRepo, pr.number);
+
+          const [activity, prComments, issueComments] = await Promise.all([
+            fetchActivityForPr(pr.number, orgAndRepo, apiKey),
+            ghpr.commentsAsync() as Promise<[GithubComment[]]>,
+            ghissue.commentsAsync() as Promise<[GithubComment[]]>,
+          ]);
+          const comments = [...prComments[0], ...issueComments[0]];
+          if (pr.number === 40848) {
+            console.log(comments);
+          }
+
+          const lastReviewRequestForUser = _.sortBy(activity, ['created_at'])
+            .reverse()
+            .find(
+              act =>
+                act.event === 'review_requested' &&
+                act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
+            );
+
+          // Get my comments only and sort them so we can get the most recent one.
+          const myCommentsUpdatedAt = comments
+            .filter(c => c.user.login.toLowerCase() === githubNick.toLowerCase())
+            .map(c => new Date(c.updated_at).getTime())
+            .sort()
+            .reverse();
+
+          if (pr.number === 40848) {
+            console.log('my last comment', myCommentsUpdatedAt);
+          }
+
           return {
             ...pr,
-            reviewRequestedAt: lastReview.reviewRequestedAt,
-            myLastCommentAt: lastReview.myLastCommentAt,
-            orgAndRepo: lastReview.orgAndRepo,
+            reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
+            myLastCommentAt: myCommentsUpdatedAt.length > 0 ? new Date(myCommentsUpdatedAt[0]) : undefined,
+            orgAndRepo,
           };
-        }
-        // Parse GH org and repo that this PR belongs to from the URL in the JSON reply.
-        const orgRepoMatch = pr.repository_url.match(/.*\/([^\/]+\/[^\/]+)$/);
-        const orgAndRepo = orgRepoMatch && orgRepoMatch[1];
-        if (!orgAndRepo) {
-          // Something weird has happened, PR doesn't have valid `repository_url` => skip it.
-          console.log(`ERROR, ${pr.number} has invalid repository_url: ${pr.repository_url}`);
+        } catch (e) {
+          console.error('ERROR', e);
           return undefined;
         }
-
-        const activity = await fetchActivityForPr(pr.number, orgAndRepo, apiKey);
-        const lastReviewRequestForUser = _.sortBy(activity, ['created_at'])
-          .reverse()
-          .find(
-            act =>
-              act.event === 'review_requested' &&
-              act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
-          );
-
-        // Fetch the GitHub PR data.
-        const ghpr = client.pr(orgAndRepo, pr.number);
-        const comments: [GithubComment[]] = await ghpr.commentsAsync();
-        // Get my comments only and sort them so we can get the most recent one.
-        const myCommentsUpdatedAt = comments[0]
-          .filter(c => c.user.login.toLowerCase() === githubNick.toLowerCase())
-          .map(c => new Date(c.updated_at));
-        myCommentsUpdatedAt.sort();
-
-        return {
-          ...pr,
-          reviewRequestedAt: new Date(lastReviewRequestForUser ? lastReviewRequestForUser.created_at : 0),
-          myLastCommentAt: myCommentsUpdatedAt.length > 0 ? new Date(myCommentsUpdatedAt[0]) : undefined,
-          orgAndRepo,
-        };
       }
     )
   );
