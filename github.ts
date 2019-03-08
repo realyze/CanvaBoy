@@ -227,12 +227,12 @@ async function fetchActivityForPr(prId: number, orgAndRepo: string, accessToken:
 }
 
 /**
- * Returns a URL pointing to GitHub page with all my incoming PRs.
+ * Returns a URL pointing to GitHub page with all my incoming PRs for GITHUB_ORG.
  */
 export async function getGithubReviewsUrl() {
   const { client } = await getGithubClient();
   const githubNick = await getGithubNick(client);
-  return `https://github.com/canva/canva/pulls?q=is%3Apr+is%3Aopen+review-requested%3A${githubNick}+sort%3Aupdated-desc`;
+  return `https://github.com/search?q=review-requested%3A${githubNick}+is%3Apr+is%3Aopen+org%3A${GITHUB_ORG}&type=Issues`;
 }
 
 /**
