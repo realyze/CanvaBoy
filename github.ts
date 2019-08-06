@@ -72,7 +72,7 @@ async function getGithubClient() {
   if (!key) {
     try {
       key = fs.readFileSync(path.join(`${process.env.HOME}`, '.pr-train'), 'utf-8');
-    } catch {}
+    } catch { }
   }
   if (!key) {
     const title = 'GitHub API Key not found';
@@ -163,7 +163,7 @@ export async function getReviews(lastReviews: MyReview[]) {
             .find(
               act =>
                 act.event === 'review_requested' &&
-                act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase()
+                (act.requested_reviewer && act.requested_reviewer.login.toLowerCase() === githubNick.toLowerCase())
             );
 
           // Get my comments only and sort them so we can get the most recent one.
